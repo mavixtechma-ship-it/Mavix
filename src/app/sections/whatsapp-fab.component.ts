@@ -7,7 +7,7 @@ import { CONTACT } from '../data/site.config';
   selector: 'app-whatsapp-fab',
   imports: [IconComponent],
   template: `
-    <a class="fab" [href]="'https://wa.me/' + c.whatsapp" target="_blank" rel="noopener" [attr.aria-label]="t().contact.whatsapp">
+    <a class="fab" [href]="'https://wa.me/' + c.whatsapp" target="_blank" rel="noopener noreferrer" [attr.aria-label]="t().contact.whatsapp">
       <span class="ring"></span><span class="ring r2"></span>
       <app-icon name="whatsapp" [size]="30" [stroke]="1.8" />
       <span class="tip">{{ t().contact.whatsapp }}</span>

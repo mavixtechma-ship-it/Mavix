@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { I18nService } from '../shared/i18n.service';
 import { IconComponent } from '../shared/icon.component';
 import { RevealDirective } from '../shared/reveal.directive';
+import { isSafeUrl } from '../shared/safe-url';
 import { TECH, WORK, WorkCategory } from '../data/site.config';
 
 type Filter = 'all' | WorkCategory;
@@ -41,6 +42,16 @@ type Filter = 'all' | WorkCategory;
                 <div class="tech" dir="ltr">{{ w.tech.join(' · ') }}</div>
                 <h3>{{ lang() === 'ar' ? w.title.ar : w.title.en }}</h3>
                 <p>{{ lang() === 'ar' ? w.summary.ar : w.summary.en }}</p>
+                @if (safe(w.demo) || safe(w.repo)) {
+                  <div class="actions">
+                    @if (safe(w.demo)) {
+                      <a class="act demo" [href]="w.demo" target="_blank" rel="noopener noreferrer">{{ t().work.demo }} <app-icon name="arrow" [size]="16" class="flip" /></a>
+                    }
+                    @if (safe(w.repo)) {
+                      <a class="act repo" [href]="w.repo" target="_blank" rel="noopener noreferrer"><app-icon name="github" [size]="16" /> {{ t().work.code }}</a>
+                    }
+                  </div>
+                }
               </div>
             </article>
           }
@@ -84,6 +95,13 @@ type Filter = 'all' | WorkCategory;
     :host-context([dir='rtl']) .tech { text-align: end; }
     h3 { margin: 0; font: 700 21px var(--display); }
     p { margin: 0; color: var(--muted); }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+    .act { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 16px; border-radius: 999px; font: 500 14.5px var(--body); text-decoration: none; transition: background .25s, color .25s, border-color .25s; }
+    .demo { background: var(--blue); color: #fff; }
+    .demo:hover { background: var(--blue-600); }
+    .repo { border: 1px solid var(--border); color: var(--ink); background: #fff; }
+    .repo:hover { border-color: var(--blue); color: var(--blue); }
+    :host-context([dir='rtl']) .flip { transform: scaleX(-1); }
 
     .tech-block { margin-top: 96px; }
     .marquee { margin-top: 20px; overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
@@ -102,4 +120,5 @@ export class WorkComponent {
   filter = signal<Filter>('all');
   items = computed(() => this.filter() === 'all' ? WORK : WORK.filter(w => w.category === this.filter()));
   loop = [...TECH, ...TECH];
+  safe = isSafeUrl;
 }

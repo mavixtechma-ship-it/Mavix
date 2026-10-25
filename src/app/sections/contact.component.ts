@@ -4,6 +4,7 @@ import { I18nService } from '../shared/i18n.service';
 import { IconComponent } from '../shared/icon.component';
 import { RevealDirective } from '../shared/reveal.directive';
 import { LogoComponent } from '../shared/logo.component';
+import { isSafeUrl } from '../shared/safe-url';
 import { CONTACT } from '../data/site.config';
 
 @Component({
@@ -18,26 +19,25 @@ import { CONTACT } from '../data/site.config';
           <div class="info">
             <h2 class="h2">{{ t().contact.title }}</h2>
             <p class="lead">{{ t().contact.lead }}</p>
-            <a [href]="waLink()" target="_blank" rel="noopener" class="btn wa">
+            <a [href]="waLink()" target="_blank" rel="noopener noreferrer" class="btn wa">
               <app-icon name="whatsapp" [size]="20" /> {{ t().contact.whatsapp }}
             </a>
             <div class="lines">
               <a [href]="'mailto:' + c.email"><app-icon name="mail" [size]="18" /> <span dir="ltr">{{ c.email }}</span></a>
-              <a [href]="'tel:' + c.phone"><app-icon name="phone" [size]="18" /> <span dir="ltr">{{ c.phone }}</span></a>
             </div>
             <div class="socials">
-              @for (s of c.socials; track s.key) {
-                <a [href]="s.url" target="_blank" rel="noopener" [attr.aria-label]="s.key"><app-icon [name]="s.key" [size]="19" /></a>
+              @for (s of socials; track s.key) {
+                <a [href]="s.url" target="_blank" rel="noopener noreferrer" [attr.aria-label]="s.key"><app-icon [name]="s.key" [size]="19" /></a>
               }
             </div>
           </div>
 
           <form class="form" (ngSubmit)="submit()" novalidate>
             <label>{{ t().contact.form.name }}
-              <input name="name" [(ngModel)]="model.name" [placeholder]="t().contact.form.namePh" required autocomplete="name">
+              <input name="name" [(ngModel)]="model.name" [placeholder]="t().contact.form.namePh" required autocomplete="name" [maxlength]="limits.name">
             </label>
             <label>{{ t().contact.form.reach }}
-              <input name="reach" [(ngModel)]="model.reach" [placeholder]="t().contact.form.reachPh" required>
+              <input name="reach" [(ngModel)]="model.reach" [placeholder]="t().contact.form.reachPh" required [maxlength]="limits.reach">
             </label>
             <label>{{ t().contact.form.service }}
               <select name="service" [(ngModel)]="model.service">
@@ -45,8 +45,11 @@ import { CONTACT } from '../data/site.config';
               </select>
             </label>
             <label>{{ t().contact.form.details }}
-              <textarea name="details" rows="4" [(ngModel)]="model.details" [placeholder]="t().contact.form.detailsPh" required></textarea>
+              <textarea name="details" rows="4" [(ngModel)]="model.details" [placeholder]="t().contact.form.detailsPh" required [maxlength]="limits.details"></textarea>
             </label>
+            <!-- honeypot: hidden from people, bots fill it -->
+            <input class="hp" name="_gotcha" [(ngModel)]="model.gotcha" tabindex="-1" autocomplete="off" aria-hidden="true">
+
             <button type="submit" class="btn btn-primary send" [disabled]="state() === 'sending'">
               {{ state() === 'sending' ? t().contact.form.sending : t().contact.form.send }}
             </button>
@@ -89,6 +92,7 @@ import { CONTACT } from '../data/site.config';
     input, select, textarea { font: 400 16px var(--body); color: var(--ink); padding: 14px 16px; border-radius: 14px; border: 1px solid var(--border); background: var(--bg-soft); transition: border-color .2s, box-shadow .2s, background .2s; }
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--blue); background: #fff; box-shadow: 0 0 0 4px rgba(30,94,255,.14); }
     textarea { resize: vertical; }
+    .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
     .send { width: 100%; }
     .send[disabled] { opacity: .7; cursor: progress; }
     .msg { margin: 0; color: #0d7a3f; font-weight: 500; }
@@ -102,8 +106,10 @@ import { CONTACT } from '../data/site.config';
 export class ContactComponent {
   t = inject(I18nService).t;
   c = CONTACT;
+  socials = CONTACT.socials.filter(s => isSafeUrl(s.url));
   year = new Date().getFullYear();
-  model = { name: '', reach: '', service: '0', details: '' };
+  readonly limits = { name: 100, reach: 150, details: 2000 };
+  model = { name: '', reach: '', service: '0', details: '', gotcha: '' };
   state = signal<'idle' | 'sending' | 'ok' | 'error'>('idle');
   msg = signal('');
 
@@ -111,31 +117,44 @@ export class ContactComponent {
     return `https://wa.me/${this.c.whatsapp}${text ? '?text=' + encodeURIComponent(text) : ''}`;
   }
 
+  // mailto hands off to the mail app without leaving the page (window.open can leave a blank tab).
+  openMail(url: string): void {
+    window.location.href = url;
+  }
+
   async submit(): Promise<void> {
     const f = this.t().contact.form;
-    const m = this.model;
-    if (!m.name.trim() || !m.reach.trim() || !m.details.trim()) {
+    // Client-side checks are UX only — trim and cap lengths before sending anywhere.
+    const name = this.model.name.trim().slice(0, this.limits.name);
+    const reach = this.model.reach.trim().slice(0, this.limits.reach);
+    const details = this.model.details.trim().slice(0, this.limits.details);
+    if (!name || !reach || !details) {
       this.state.set('error'); this.msg.set(f.required); return;
     }
-    const service = this.t().services.items[+m.service]?.title ?? '';
-    const text = `${f.name}: ${m.name}\n${f.reach}: ${m.reach}\n${f.service}: ${service}\n${f.details}: ${m.details}`;
-
-    // No Formspree → open WhatsApp with the message
-    if (!this.c.formspreeId) {
-      window.open(this.waLink(text), '_blank', 'noopener');
+    // Honeypot filled → bot. Pretend success, send nothing.
+    if (this.model.gotcha) {
       this.state.set('ok'); this.msg.set(f.ok); return;
+    }
+    const service = this.t().services.items[+this.model.service]?.title ?? '';
+    const text = `${f.name}: ${name}\n${f.reach}: ${reach}\n${f.service}: ${service}\n${f.details}: ${details}`;
+
+    // No Formspree → open the visitor's email app, addressed to us and pre-filled
+    if (!this.c.formspreeId) {
+      const subject = `${f.subject} — ${service}`;
+      this.openMail(`mailto:${this.c.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`);
+      this.state.set('ok'); this.msg.set(f.mailOk); return;
     }
 
     this.state.set('sending'); this.msg.set('');
     try {
-      const res = await fetch(`https://formspree.io/f/${this.c.formspreeId}`, {
+      const res = await fetch(`https://formspree.io/f/${encodeURIComponent(this.c.formspreeId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ name: m.name, contact: m.reach, service, message: m.details }),
+        body: JSON.stringify({ name, contact: reach, service, message: details }),
       });
       if (!res.ok) throw new Error(String(res.status));
       this.state.set('ok'); this.msg.set(f.ok);
-      this.model = { name: '', reach: '', service: '0', details: '' };
+      this.model = { name: '', reach: '', service: '0', details: '', gotcha: '' };
     } catch {
       this.state.set('error'); this.msg.set(f.err);
     }
